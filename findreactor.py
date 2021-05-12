@@ -60,11 +60,13 @@ class findreactor():
                             [0., -5000., 0.]
                                 ]
         self.nstart = nstart = 10
-        maxdist = 1000.
+        maxdist = 3000.
         self.startPoints = []
         for i in range(nstart):
             self.startPoints.append( maxdist*(numpy.random.random(3)-0.5) )
+        self.startPoints.append( numpy.array([0., 0., 2.*(-1190.)]) ) # ambiguous point (reactor on other side of det)
         print 'findreactor.__init__ self.startPoints',self.startPoints
+        self.xpass = [None, None, None] ### init to fail
         self.XreactorAlt = [] ##### SET TO ZERO LENGTH #####
         self.Xdet= [5970., 5090., -1190.]     
         self.dX = [2040., 1602.85, 1176.]
@@ -210,8 +212,10 @@ class findreactor():
             Solutions[Nexpt].extend(fitParam)
             #print 'findreactor.main Solutions',Solutions
 
-            checkStart = True
+            # does the minimum found depend upon the starting point? (No, not with Nevt=100k and NZ=1 or NZ=4)
+            checkStart = False
             if checkStart:
+                print 'findreactor.main Checking best fit for various initial values'
                 for xstart in self.startPoints:
                     resC,methodC = self.findR(xstart=xstart,spew=False)
                     successC = res['success']
@@ -223,11 +227,13 @@ class findreactor():
                     words+= fC.format(*fitParamC[1:])
                     print 'findreactor.main checkStart',words
 
-            scanIt = False
+            scanIt = True
             if scanIt and TotalExpt <=1 : 
                 if success :
                     self.scanR(plot=True, inputParam=fitParam)
                     self.scanR(plot=True, inputParam=None)
+                    self.scanR(plot=True, inputParam=None, reflexion=True)
+                    self.scanR(plot=True, inputParam=None, scanZonly=True)
                 else:
                     self.scanR(plot=True, inputParam=None)
 
@@ -344,6 +350,7 @@ class findreactor():
             pdf = self.figDir + '/' + filename + '.pdf'
             plt.savefig(pdf)
             print 'findreactor.showOrDraw Wrote',pdf
+            plt.close() # avoid runtime warning?
         else:
             plt.show()
         plt.clf()
@@ -360,10 +367,11 @@ class findreactor():
             for old in r[new]:
                 if old in filename : filename = filename.replace(old,new)
         return filename
-    def scanR(self,plot=False,inputParam=None):
+    def scanR(self,plot=False,inputParam=None, reflexion=False, scanZonly=False):
         '''
         scan to find reactor position
         if plot, then show some 2d plots
+        add scan in Z
         '''
         if inputParam is not None:
             param0 = inputParam
@@ -371,39 +379,82 @@ class findreactor():
             if self.nFitPar==3 : param0.append(self.Xreactor[2])
             words = 'about best fit'
         else:
-            param0 = self.initparam(xr=self.Xreactor)
-            words = 'about default reactor position' 
+            if reflexion:
+                param0 = self.initparam(xr=[0.,0.,2*self.Xdet[-1]])
+                words =  'about REFLECTED reactor position'
+            else:
+                param0 = self.initparam(xr=self.Xreactor)
+                words = 'about default reactor position'
 
+                
+        if not scanZonly:
 
-        Nhit = self.Nhit
+            Nhit = self.Nhit
 
-        dz = 0.
-        results = []
-        x1,x2,xstep = -200.,200.,200.
-        x2 += xstep
-        y1,y2,ystep = -200.,200.,200.
-        y2 += ystep
-        print 'findreactor.scanR xstep {0:.1f} ystep {1:.1f} '.format(xstep,ystep) + words
-        funmin = 1.e20
-        for dx in numpy.arange(x1,x2,xstep):
-            for dy in numpy.arange(y1,y2,ystep):
-                xr = [param0[1]+dx,param0[2]+dy,param0[3]+dz]
+            dz = 0.
+            results = []
+            x1,x2,xstep = -200.,200.,200.
+            x2 += xstep
+            y1,y2,ystep = -200.,200.,200.
+            y2 += ystep
+            print 'findreactor.scanR xstep {0:.1f} ystep {1:.1f} '.format(xstep,ystep) + words
+            funmin = 1.e20
+            for dx in numpy.arange(x1,x2,xstep):
+                for dy in numpy.arange(y1,y2,ystep):
+                    xr = [param0[1]+dx,param0[2]+dy,param0[3]+dz]
+                    param = self.initparam(xr=xr)
+                    fun = self.funcR2(param)
+                    if plot:
+                        U = self.uR2(param)
+                        words = 'x {0:.1f} y {1:.1f} z {2:.1f} chi2 {3:.1f}'.format(param[1],param[2],param[3],fun)
+                        self.plotFandD(Nhit,U,words)
+
+                    if self.debug > 1 : print 'findreactor.scanR fun,param',fun,param
+                    a = [fun]
+                    a.extend(param)
+                    results.append(a)
+                    funmin = min(funmin,fun)
+            sr = sorted(results, key=lambda x: x[0])
+            print 'Chi2 C x0 y0 z0'
+            for r in sr:
+                print '{0} {1:.4g} {2:.1f} {3:.1f} {4:.1f}'.format(*r)
+
+        else:
+            z1 = 2.*self.Xdet[-1]
+            z2 = self.Xreactor[-1]
+            dz = abs(z2-z1)/20.
+            ndz= 10. 
+            zmi = 2.*self.Xdet[-1] - ndz*dz
+            zma = self.Xreactor[-1] + ndz*dz
+            zvalues = numpy.arange(zmi,zma,dz)
+            f,C0,Cmin = [],[],[]
+            xr = [x for x in self.Xreactor]
+            for z in zvalues:
+                xr[2] = z
                 param = self.initparam(xr=xr)
+                C = param[0]
+                C0.append(C)
+                self.xpass = xr
+                res = minimize(self.funcConly, C, method='Powell')
+                #print 'findreactor.scanR res',res
+                param[0] = float(res['x'])
+                Cmin.append(param[0])
                 fun = self.funcR2(param)
-                if plot:
-                    U = self.uR2(param)
-                    words = 'x {0:.1f} y {1:.1f} z {2:.1f} chi2 {3:.1f}'.format(param[1],param[2],param[3],fun)
-                    self.plotFandD(Nhit,U,words)
-
-                if self.debug > 1 : print 'findreactor.scanR fun,param',fun,param
-                a = [fun]
-                a.extend(param)
-                results.append(a)
-                funmin = min(funmin,fun)
-        sr = sorted(results, key=lambda x: x[0])
-        print 'Chi2 C x0 y0 z0'
-        for r in sr:
-            print '{0} {1:.4g} {2:.1f} {3:.1f} {4:.1f}'.format(*r)
+                f.append(fun)
+            words = 'Reactor xyz {0:.1f} {1:.1f} {2:.1f} '.format(*self.Xreactor)
+            words += 'scan chi2 vs z at x {0:.1f} y {1:.1f}'.format(xr[0],xr[1])
+            f = numpy.array(f)
+            if plot:
+                plt.plot(zvalues,f,'bo')
+                plt.title(words)
+                self.showOrDraw(words)
+            #print 'f',f
+            #print 'C0',C0
+            #print 'Cmin',Cmin
+            #print 'zvalues',zvalues
+            print 'Chi2 C0 Cmin z'
+            for i,fun in enumerate(f):
+                print '{0:.1f} {1:.4g} {2:.4g} {3:.1f}'.format(fun,C0[i],Cmin[i],zvalues[i])
         return
     def findR(self,xstart=None,spew=True):
         '''
@@ -481,6 +532,21 @@ class findreactor():
         Nhit = self.Nhit
         if self.useChi2:
             if not U.all(): print 'findreactor.funcR2 usingChi2 >1 element of U=0',U
+            fun = sum((U-Nhit)*(U-Nhit)/U)
+        else:
+            fun = 2*sum(U - Nhit + Nhit*numpy.log(Nhit/U,where=Nhit>0.))
+        return fun
+    def funcConly(self,C):
+        '''
+        function to be minimized in 1d. only the C parameter is varied
+        see funcR2 comments
+        '''
+        param = [C]
+        param.extend(self.xpass)
+        U = self.uR2(param)
+        Nhit = self.Nhit
+        if self.useChi2:
+            if not U.all(): print 'findreactor.funcConly usingChi2 >1 element of U=0',U
             fun = sum((U-Nhit)*(U-Nhit)/U)
         else:
             fun = 2*sum(U - Nhit + Nhit*numpy.log(Nhit/U,where=Nhit>0.))
