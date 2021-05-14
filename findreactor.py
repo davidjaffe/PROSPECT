@@ -227,7 +227,7 @@ class findreactor():
                     words+= fC.format(*fitParamC[1:])
                     print 'findreactor.main checkStart',words
 
-            scanIt = True
+            scanIt = False 
             if scanIt and TotalExpt <=1 : 
                 if success :
                     self.scanR(plot=True, inputParam=fitParam)
