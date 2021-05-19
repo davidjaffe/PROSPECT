@@ -52,6 +52,9 @@ class findreactor():
         self.debug = debug
         self.TotalExpt = TotalExpt
         print 'findreactor.__init__ debug',debug,'TotalExpt',TotalExpt,'drawToFile',drawToFile,'nFitPar',nFitPar,'GenEvtsPerExpt',GenEvtsPerExpt,'useChi2',self.useChi2,'setNZ',self.setNZ
+
+        self.uniformInR = True
+        
         self.Xreactor = [0.,0.,0.]
         self.XreactorAlt = [[0.,0.,-1200.],
                             [0.,-500., 0.],
@@ -159,7 +162,10 @@ class findreactor():
 # generate the hits            
         uni = False
         incenters = False
+        uniformInR = self.uniformInR
         if uni or incenters : TotalExpt = 1
+        if uniformInR :
+            print '\nfindreactor.main >>> USING UNIFORM DISTRIBUTION IN R <<< \n'
 
         for Nexpt in range(TotalExpt):
 
@@ -178,7 +184,7 @@ class findreactor():
                     z.append(q[2])
                 X,Y,Z = numpy.array(x),numpy.array(y),numpy.array(z)
             else:
-                X,Y,Z = self.genSP(N, uniform=uni)
+                X,Y,Z = self.genSP(N, uniform=uni, uniformInR=uniformInR)
 
     # process the hits
             X,Y,Z = self.checkSP(X,Y,Z)
@@ -555,6 +561,7 @@ class findreactor():
         '''
         uR2 = calculated rate in each module, in increasing module number
         Deal with case where number of input parameters is <4
+        If using uniformInR=True, then ignore solid angle corrections
         '''
         C,x0 = param[0],param[1]
         if self.nFitPar==4:
@@ -574,8 +581,9 @@ class findreactor():
             
         cX,cY,cZ = self.cX,self.cY,self.cZ
         R2 = (cX-x0)*(cX-x0) + (cY-y0)*(cY-y0) + (cZ-z0)*(cZ-z0)
-        solidA = self.calcSolidA(cX,cY,cZ,XYZ)
-        R2 *= solidA[0]/solidA
+        if not self.uniformInR :
+            solidA = self.calcSolidA(cX,cY,cZ,XYZ)
+            R2 *= solidA[0]/solidA
         U  = C/R2 
         return U       
     def getMcount(self,iM,words='Module'):
@@ -750,19 +758,26 @@ class findreactor():
         self.showOrPlot('supposed to follow 1/x^2')
 #        plt.show()
         return
-    def genSP(self,N=1,uniform=False):
+    def genSP(self,N=1,uniform=False,uniformInR=False):
         '''
         generate up to N space points 
         if uniform is True, just uniformly distribute in x,y,z
         else try to generate according to 1/R2 nearly inside the detector
+        unless uniformInR is True, then generate with uniform R distribution
         '''
+        if uniform==True and uniformInR==True:
+            sys.exit('findreactor.genSP ERROR Inconsistent input. Cannot have uniform and uniformInR both True')
+        
         if uniform:
             X  = self.genRange(N,V=[self.minXdet[0],self.maxXdet[0]])
             Y  = self.genRange(N,V=[self.minXdet[1],self.maxXdet[1]])
             Z  = self.genRange(N,V=[self.minXdet[2],self.maxXdet[2]])
         else:
-            R = self.genRm2(N,Rmin=self.Rlimits[0])
-            R = R[R<self.Rlimits[1]]
+            if uniformInR:
+                R = self.genRange(N,V=self.Rlimits)
+            else:
+                R = self.genRm2(N,Rmin=self.Rlimits[0])
+                R = R[R<self.Rlimits[1]]
             n = len(R)
             Phi = self.genRange(n,V=self.philimits)
             CT  = self.genRange(n,V=self.ctlimits)
