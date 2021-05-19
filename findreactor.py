@@ -120,8 +120,8 @@ class findreactor():
 
         debug = self.debug
 
-        
-        if False:  # checks R^2 distribution generation
+        checkR2 = False
+        if checkR2:  # checks R^2 distribution generation
             N = 100000
             s = self.genRm2(N=N,Rmin=self.Rlimits[0])
             s = s[s<self.Rlimits[1]]
@@ -747,7 +747,7 @@ class findreactor():
         inrange = len(s)-lo-hi
         print 'findreactor.plotRm2 lo,inrange,hi',lo,inrange,hi
         plt.title('supposed to follow 1/x^2')
-        self.plotOrShow('supposed to follow 1/x^2')
+        self.showOrPlot('supposed to follow 1/x^2')
 #        plt.show()
         return
     def genSP(self,N=1,uniform=False):
@@ -925,7 +925,7 @@ class findreactor():
         
         
         #plt.yscale('log')
-        self.plotOrShow('testPareto')
+        self.showOrPlot('testPareto')
 #        plt.show()
         return
 if __name__ == '__main__' :
